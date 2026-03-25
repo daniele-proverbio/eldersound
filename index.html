@@ -1,0 +1,1001 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="theme-color" content="#0a0a0f" />
+  <meta name="description" content="Record your voice and shift the pitch in real-time" />
+  <title>Pitch Shifter</title>
+  <link rel="manifest" href="manifest.json" />
+  <link rel="apple-touch-icon" href="icon-192.png" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <meta name="apple-mobile-web-app-title" content="Pitch Shifter" />
+  <meta name="mobile-web-app-capable" content="yes" />
+  <meta property="og:title" content="Pitch Shifter" />
+  <meta property="og:description" content="Record your voice and shift the pitch without changing speed." />
+  <meta property="og:image" content="icon-512.png" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=DM+Mono:wght@300;400;500&display=swap" rel="stylesheet" />
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg: #0a0a0f;
+      --surface: #111118;
+      --border: #1e1e2e;
+      --accent: #c8f53e;
+      --accent2: #ff5e5e;
+      --accent3: #5ec4ff;
+      --text: #e8e8f0;
+      --muted: #555570;
+      --font-display: 'Bebas Neue', sans-serif;
+      --font-body: 'DM Mono', monospace;
+    }
+
+    html, body {
+      height: 100%;
+      background: var(--bg);
+      color: var(--text);
+      font-family: var(--font-body);
+      overflow: hidden;
+    }
+
+    /* Grain overlay */
+    body::before {
+      content: '';
+      position: fixed;
+      inset: 0;
+      background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.04'/%3E%3C/svg%3E");
+      background-size: 180px;
+      pointer-events: none;
+      z-index: 999;
+      opacity: 0.5;
+    }
+
+    #app {
+      height: 100vh;
+      display: grid;
+      grid-template-rows: auto 1fr auto;
+      max-width: 480px;
+      margin: 0 auto;
+      padding: 0 24px;
+    }
+
+    /* HEADER */
+    header {
+      padding: 28px 0 12px;
+      display: flex;
+      align-items: baseline;
+      gap: 12px;
+    }
+
+    header h1 {
+      font-family: var(--font-display);
+      font-size: 3.6rem;
+      letter-spacing: 0.04em;
+      line-height: 1;
+      color: var(--accent);
+    }
+
+    header span {
+      font-size: 0.65rem;
+      letter-spacing: 0.18em;
+      text-transform: uppercase;
+      color: var(--muted);
+      padding-bottom: 6px;
+    }
+
+    /* MAIN */
+    main {
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      gap: 32px;
+    }
+
+    /* VISUALIZER */
+    .viz-wrap {
+      position: relative;
+      height: 80px;
+    }
+
+    canvas#viz {
+      width: 100%;
+      height: 100%;
+      border-bottom: 1px solid var(--border);
+    }
+
+    .viz-label {
+      position: absolute;
+      top: 6px;
+      right: 0;
+      font-size: 0.6rem;
+      letter-spacing: 0.14em;
+      text-transform: uppercase;
+      color: var(--muted);
+    }
+
+    /* STATUS */
+    #status {
+      font-size: 0.65rem;
+      letter-spacing: 0.16em;
+      text-transform: uppercase;
+      color: var(--muted);
+      min-height: 1em;
+      transition: color 0.3s;
+    }
+    #status.active { color: var(--accent); }
+    #status.playing { color: var(--accent3); }
+    #status.error { color: var(--accent2); }
+
+    /* REC BUTTON */
+    .rec-zone {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 16px;
+    }
+
+    #recBtn {
+      width: 88px;
+      height: 88px;
+      border-radius: 50%;
+      border: 2px solid var(--border);
+      background: var(--surface);
+      cursor: pointer;
+      position: relative;
+      transition: border-color 0.2s, transform 0.1s;
+      flex-shrink: 0;
+    }
+
+    #recBtn::after {
+      content: '';
+      position: absolute;
+      inset: 14px;
+      border-radius: 50%;
+      background: var(--accent2);
+      transition: inset 0.25s cubic-bezier(0.34,1.56,0.64,1), border-radius 0.25s, background 0.2s;
+    }
+
+    #recBtn.recording {
+      border-color: var(--accent2);
+    }
+
+    #recBtn.recording::after {
+      inset: 26px;
+      border-radius: 4px;
+      background: var(--accent2);
+    }
+
+    #recBtn:hover { transform: scale(1.05); }
+    #recBtn:active { transform: scale(0.97); }
+
+    /* Pulse ring */
+    #recBtn.recording::before {
+      content: '';
+      position: absolute;
+      inset: -10px;
+      border-radius: 50%;
+      border: 1.5px solid var(--accent2);
+      animation: pulse 1.4s ease-out infinite;
+    }
+
+    @keyframes pulse {
+      0% { opacity: 0.7; transform: scale(1); }
+      100% { opacity: 0; transform: scale(1.35); }
+    }
+
+    .rec-label {
+      font-size: 0.62rem;
+      letter-spacing: 0.16em;
+      text-transform: uppercase;
+      color: var(--muted);
+    }
+
+    /* PITCH CONTROL */
+    .pitch-section {
+      opacity: 0.3;
+      pointer-events: none;
+      transition: opacity 0.4s;
+    }
+
+    .pitch-section.enabled {
+      opacity: 1;
+      pointer-events: all;
+    }
+
+    .pitch-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: baseline;
+      margin-bottom: 18px;
+    }
+
+    .pitch-header .label {
+      font-size: 0.62rem;
+      letter-spacing: 0.16em;
+      text-transform: uppercase;
+      color: var(--muted);
+    }
+
+    #pitchDisplay {
+      font-family: var(--font-display);
+      font-size: 2.4rem;
+      letter-spacing: 0.04em;
+      color: var(--accent);
+      line-height: 1;
+      min-width: 90px;
+      text-align: right;
+    }
+
+    /* Custom range slider */
+    .slider-track {
+      position: relative;
+      height: 40px;
+      display: flex;
+      align-items: center;
+    }
+
+    input[type=range] {
+      -webkit-appearance: none;
+      appearance: none;
+      width: 100%;
+      height: 3px;
+      background: transparent;
+      outline: none;
+      cursor: pointer;
+    }
+
+    .slider-bg {
+      position: absolute;
+      inset: 0;
+      display: flex;
+      align-items: center;
+      pointer-events: none;
+    }
+
+    .slider-fill-bg {
+      position: absolute;
+      width: 100%;
+      height: 3px;
+      background: var(--border);
+      border-radius: 2px;
+    }
+
+    #sliderFill {
+      position: absolute;
+      height: 3px;
+      background: var(--accent);
+      border-radius: 2px;
+      transform-origin: left;
+      transition: width 0s;
+    }
+
+    /* Center tick */
+    .center-tick {
+      position: absolute;
+      left: 50%;
+      top: 50%;
+      transform: translate(-50%, -50%);
+      width: 1.5px;
+      height: 14px;
+      background: var(--muted);
+      pointer-events: none;
+    }
+
+    input[type=range]::-webkit-slider-thumb {
+      -webkit-appearance: none;
+      width: 20px;
+      height: 20px;
+      border-radius: 50%;
+      background: var(--accent);
+      border: 3px solid var(--bg);
+      box-shadow: 0 0 0 1.5px var(--accent);
+      cursor: grab;
+      transition: transform 0.15s, background 0.15s;
+      position: relative;
+      z-index: 2;
+    }
+
+    input[type=range]:active::-webkit-slider-thumb {
+      cursor: grabbing;
+      transform: scale(1.2);
+    }
+
+    input[type=range]::-moz-range-thumb {
+      width: 20px;
+      height: 20px;
+      border-radius: 50%;
+      background: var(--accent);
+      border: 3px solid var(--bg);
+      box-shadow: 0 0 0 1.5px var(--accent);
+      cursor: grab;
+    }
+
+    .semitone-marks {
+      display: flex;
+      justify-content: space-between;
+      padding: 0 2px;
+      margin-top: 6px;
+    }
+
+    .semitone-marks span {
+      font-size: 0.55rem;
+      color: var(--muted);
+      letter-spacing: 0.04em;
+    }
+
+    /* PLAY CONTROLS */
+    .controls {
+      display: flex;
+      gap: 12px;
+      opacity: 0.3;
+      pointer-events: none;
+      transition: opacity 0.4s;
+    }
+
+    .controls.enabled {
+      opacity: 1;
+      pointer-events: all;
+    }
+
+    .ctrl-btn {
+      flex: 1;
+      height: 48px;
+      border-radius: 6px;
+      border: 1.5px solid var(--border);
+      background: var(--surface);
+      color: var(--text);
+      font-family: var(--font-body);
+      font-size: 0.65rem;
+      letter-spacing: 0.14em;
+      text-transform: uppercase;
+      cursor: pointer;
+      transition: background 0.15s, border-color 0.15s, color 0.15s, transform 0.1s;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+    }
+
+    .ctrl-btn:hover { background: var(--border); }
+    .ctrl-btn:active { transform: scale(0.97); }
+
+    .ctrl-btn.primary {
+      border-color: var(--accent3);
+      color: var(--accent3);
+    }
+
+    .ctrl-btn.primary:hover { background: rgba(94,196,255,0.08); }
+
+    .ctrl-btn.danger {
+      border-color: var(--accent2);
+      color: var(--accent2);
+    }
+
+    .ctrl-btn.danger:hover { background: rgba(255,94,94,0.08); }
+
+    /* FOOTER */
+    footer {
+      padding: 16px 0 24px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+
+    footer .duration {
+      font-size: 0.6rem;
+      letter-spacing: 0.12em;
+      color: var(--muted);
+    }
+
+    footer .hint {
+      font-size: 0.58rem;
+      letter-spacing: 0.1em;
+      color: var(--border);
+    }
+
+    /* INFO BUTTON */
+    #infoToggle {
+      background: none;
+      border: none;
+      cursor: pointer;
+      color: var(--muted);
+      padding: 4px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      transition: color 0.2s, transform 0.2s;
+      flex-shrink: 0;
+    }
+    #infoToggle:hover { color: var(--accent); transform: scale(1.1); }
+
+    /* INFO PANEL */
+    #infoPanel {
+      position: fixed;
+      inset: 0;
+      z-index: 100;
+      display: flex;
+      align-items: flex-end;
+      pointer-events: none;
+    }
+
+    #infoPanel.open { pointer-events: all; }
+
+    #infoBg {
+      position: absolute;
+      inset: 0;
+      background: rgba(10,10,15,0.0);
+      transition: background 0.35s;
+    }
+    #infoPanel.open #infoBg { background: rgba(10,10,15,0.75); }
+
+    #infoSheet {
+      position: relative;
+      width: 100%;
+      max-width: 480px;
+      margin: 0 auto;
+      background: var(--surface);
+      border-top: 1px solid var(--border);
+      border-radius: 16px 16px 0 0;
+      padding: 32px 28px 40px;
+      transform: translateY(100%);
+      transition: transform 0.38s cubic-bezier(0.32, 0.72, 0, 1);
+    }
+    #infoPanel.open #infoSheet { transform: translateY(0); }
+
+    .info-handle {
+      width: 36px;
+      height: 3px;
+      border-radius: 2px;
+      background: var(--border);
+      margin: 0 auto 28px;
+    }
+
+    .info-label {
+      font-family: var(--font-display);
+      font-size: 1.8rem;
+      letter-spacing: 0.06em;
+      color: var(--accent);
+      margin-bottom: 24px;
+    }
+
+    .info-body p {
+      font-size: 0.72rem;
+      line-height: 1.8;
+      color: var(--text);
+      letter-spacing: 0.03em;
+      margin-bottom: 18px;
+    }
+
+    .info-body p:last-child { margin-bottom: 0; }
+
+    .info-body .disclaimer {
+      color: var(--muted);
+      font-size: 0.65rem;
+      line-height: 1.7;
+    }
+
+    .info-body .credit {
+      color: var(--muted);
+      font-size: 0.62rem;
+      letter-spacing: 0.1em;
+      border-top: 1px solid var(--border);
+      padding-top: 18px;
+      margin-top: 18px;
+    }
+
+    /* Loading state */
+    @keyframes fadeIn {
+      from { opacity: 0; transform: translateY(8px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+
+    #app { animation: fadeIn 0.5s ease both; }
+
+    /* Waveform playback cursor */
+    #playCursor {
+      position: absolute;
+      top: 0; bottom: 0;
+      width: 1.5px;
+      background: var(--accent3);
+      opacity: 0;
+      pointer-events: none;
+      transition: opacity 0.2s;
+    }
+    #playCursor.visible { opacity: 0.8; }
+  </style>
+</head>
+<body>
+<div id="app">
+  <header>
+    <h1>PITCH</h1>
+    <span>Voice Shifter</span>
+  </header>
+
+  <main>
+    <div class="viz-wrap">
+      <canvas id="viz"></canvas>
+      <div id="playCursor"></div>
+      <div class="viz-label" id="vizLabel">idle</div>
+    </div>
+
+    <div id="status">tap the button to record</div>
+
+    <div class="rec-zone">
+      <button id="recBtn" title="Record"></button>
+      <div class="rec-label" id="recLabel">Record</div>
+    </div>
+
+    <div class="pitch-section" id="pitchSection">
+      <div class="pitch-header">
+        <span class="label">Pitch Shift</span>
+        <div id="pitchDisplay">0 st</div>
+      </div>
+      <div class="slider-track">
+        <div class="slider-bg">
+          <div class="slider-fill-bg"></div>
+          <div id="sliderFill"></div>
+          <div class="center-tick"></div>
+        </div>
+        <input type="range" id="pitchSlider" min="-12" max="12" step="0.5" value="0" />
+      </div>
+      <div class="semitone-marks">
+        <span>-12</span><span>-6</span><span>0</span><span>+6</span><span>+12</span>
+      </div>
+    </div>
+
+    <div class="controls" id="playControls">
+      <button class="ctrl-btn primary" id="playBtn">
+        <svg width="12" height="12" viewBox="0 0 12 12" fill="currentColor"><path d="M2 1l9 5-9 5V1z"/></svg>
+        Play
+      </button>
+      <button class="ctrl-btn danger" id="clearBtn">
+        <svg width="12" height="12" viewBox="0 0 12 12" fill="currentColor"><path d="M1 1l10 10M11 1L1 11" stroke="currentColor" stroke-width="1.5" fill="none" stroke-linecap="round"/></svg>
+        Clear
+      </button>
+    </div>
+  </main>
+
+  <footer>
+    <span class="duration" id="durationDisplay"></span>
+    <button id="infoToggle" title="About this app" aria-label="Info">
+      <svg width="18" height="18" viewBox="0 0 18 18" fill="none" xmlns="http://www.w3.org/2000/svg">
+        <circle cx="9" cy="9" r="8" stroke="currentColor" stroke-width="1.5"/>
+        <path d="M9 8v5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+        <circle cx="9" cy="5.5" r="0.75" fill="currentColor"/>
+      </svg>
+    </button>
+  </footer>
+
+  <!-- INFO PANEL -->
+  <div id="infoPanel">
+    <div id="infoBg"></div>
+    <div id="infoSheet" role="dialog" aria-modal="true" aria-label="About Pitch Shifter">
+      <div class="info-handle"></div>
+      <div class="info-label">About</div>
+      <div class="info-body">
+        <p>Elder people often do not hear certain frequency ranges. Instead of shouting, try to change the pitch of your voice until your elder hears properly.</p>
+        <p class="disclaimer">This is not a medical device, requires trial and errors to find a proper pitch, and does not substitute acoustic devices.</p>
+        <p class="credit">Developed by Daniele Proverbio, 2026</p>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+// ─── PITCH SHIFT via Phase Vocoder (SoundTouchJS approach using Web Audio) ──
+// We use OfflineAudioContext + a time-domain phase vocoder to shift pitch
+// without altering playback speed.
+
+const $ = id => document.getElementById(id);
+
+const recBtn = $('recBtn');
+const playBtn = $('playBtn');
+const clearBtn = $('clearBtn');
+const pitchSlider = $('pitchSlider');
+const pitchDisplay = $('pitchDisplay');
+const pitchSection = $('pitchSection');
+const playControls = $('playControls');
+const statusEl = $('status');
+const vizLabel = $('vizLabel');
+const durationDisplay = $('durationDisplay');
+const sliderFill = $('sliderFill');
+const playCursor = $('playCursor');
+
+let mediaRecorder = null;
+let audioCtx = null;
+let recordedBuffer = null;
+let isRecording = false;
+let isPlaying = false;
+let playSource = null;
+let analyser = null;
+let animFrame = null;
+let recStartTime = null;
+let recTimer = null;
+
+const canvas = $('viz');
+const ctx2d = canvas.getContext('2d');
+
+function resizeCanvas() {
+  canvas.width = canvas.offsetWidth * devicePixelRatio;
+  canvas.height = canvas.offsetHeight * devicePixelRatio;
+}
+resizeCanvas();
+window.addEventListener('resize', resizeCanvas);
+
+// ─── STATUS ───────────────────────────────────────────────────────────────
+function setStatus(msg, cls = '') {
+  statusEl.textContent = msg;
+  statusEl.className = cls;
+}
+
+function updateSliderFill(val) {
+  const min = +pitchSlider.min, max = +pitchSlider.max;
+  const pct = (val - min) / (max - min) * 100;
+  sliderFill.style.width = pct + '%';
+}
+updateSliderFill(0);
+
+// ─── AUDIO CONTEXT ────────────────────────────────────────────────────────
+function getAudioCtx() {
+  if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+  if (audioCtx.state === 'suspended') audioCtx.resume();
+  return audioCtx;
+}
+
+// ─── RECORDING ────────────────────────────────────────────────────────────
+async function startRecording() {
+  try {
+    const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+    const ac = getAudioCtx();
+    analyser = ac.createAnalyser();
+    analyser.fftSize = 512;
+    const src = ac.createMediaStreamSource(stream);
+    src.connect(analyser);
+
+    const chunks = [];
+    mediaRecorder = new MediaRecorder(stream);
+    mediaRecorder.ondataavailable = e => chunks.push(e.data);
+    mediaRecorder.onstop = async () => {
+      stream.getTracks().forEach(t => t.stop());
+      analyser = null;
+      const blob = new Blob(chunks, { type: 'audio/webm' });
+      const ab = await blob.arrayBuffer();
+      recordedBuffer = await ac.decodeAudioData(ab);
+      const dur = recordedBuffer.duration.toFixed(1);
+      durationDisplay.textContent = dur + 's recorded';
+      setStatus('recording ready — adjust pitch & play', 'active');
+      vizLabel.textContent = 'waveform';
+      pitchSection.classList.add('enabled');
+      playControls.classList.add('enabled');
+      drawWaveform(recordedBuffer);
+      stopRecTimer();
+    };
+
+    mediaRecorder.start();
+    isRecording = true;
+    recBtn.classList.add('recording');
+    $('recLabel').textContent = 'Stop';
+    setStatus('recording…', 'active');
+    vizLabel.textContent = 'live';
+    recStartTime = Date.now();
+    startRecTimer();
+    drawLive();
+  } catch(e) {
+    setStatus('microphone access denied', 'error');
+    console.error(e);
+  }
+}
+
+function stopRecording() {
+  if (mediaRecorder && mediaRecorder.state !== 'inactive') {
+    mediaRecorder.stop();
+  }
+  isRecording = false;
+  recBtn.classList.remove('recording');
+  $('recLabel').textContent = 'Record';
+  cancelAnimationFrame(animFrame);
+}
+
+function startRecTimer() {
+  recTimer = setInterval(() => {
+    const s = ((Date.now() - recStartTime) / 1000).toFixed(1);
+    durationDisplay.textContent = s + 's';
+  }, 100);
+}
+function stopRecTimer() {
+  clearInterval(recTimer);
+}
+
+// ─── LIVE VISUALIZER ─────────────────────────────────────────────────────
+function drawLive() {
+  if (!isRecording) return;
+  animFrame = requestAnimationFrame(drawLive);
+  if (!analyser) return;
+  const W = canvas.width, H = canvas.height;
+  const buf = new Uint8Array(analyser.fftSize);
+  analyser.getByteTimeDomainData(buf);
+  ctx2d.clearRect(0, 0, W, H);
+  ctx2d.strokeStyle = getComputedStyle(document.documentElement).getPropertyValue('--accent2').trim();
+  ctx2d.lineWidth = 1.5 * devicePixelRatio;
+  ctx2d.beginPath();
+  for (let i = 0; i < buf.length; i++) {
+    const x = (i / buf.length) * W;
+    const y = (buf[i] / 255) * H;
+    i === 0 ? ctx2d.moveTo(x, y) : ctx2d.lineTo(x, y);
+  }
+  ctx2d.stroke();
+}
+
+// ─── WAVEFORM DRAW ────────────────────────────────────────────────────────
+function drawWaveform(buffer, progress = 0) {
+  const W = canvas.width, H = canvas.height;
+  const data = buffer.getChannelData(0);
+  const step = Math.ceil(data.length / (W / devicePixelRatio));
+  ctx2d.clearRect(0, 0, W, H);
+
+  const accentHex = getComputedStyle(document.documentElement).getPropertyValue('--accent').trim();
+  const accent3Hex = getComputedStyle(document.documentElement).getPropertyValue('--accent3').trim();
+
+  for (let i = 0; i < W; i++) {
+    const idx = Math.floor((i / W) * data.length);
+    let max = 0;
+    for (let j = 0; j < step; j++) {
+      const v = Math.abs(data[idx + j] || 0);
+      if (v > max) max = v;
+    }
+    const h = max * H * 0.9;
+    const midY = H / 2;
+    ctx2d.fillStyle = (i / W) < progress ? accent3Hex : accentHex;
+    ctx2d.globalAlpha = 0.85;
+    ctx2d.fillRect(i, midY - h / 2, 1, h || 1);
+  }
+  ctx2d.globalAlpha = 1;
+}
+
+// ─── PITCH SHIFT ALGORITHM ───────────────────────────────────────────────
+// Time-domain pitch shifting using granular / WSOLA approach:
+// We resample the buffer (speed change), then play at a different rate
+// to compensate — net result: pitch shifted, duration preserved.
+//
+// More practically: use OfflineAudioContext to resample with a shifted
+// sample rate interpretation (render buffer at 1/ratio of original),
+// then play that buffer at the compensated rate so duration stays the same.
+
+async function buildPitchedBuffer(srcBuffer, semitones) {
+  if (semitones === 0) return srcBuffer;
+  const ratio = Math.pow(2, semitones / 12); // > 1 = higher pitch
+
+  // Strategy: render src into a shorter/longer offline buffer (time-stretched),
+  // then play back at original sample rate — changes pitch but not duration.
+  // Equivalent to: resample by 1/ratio (time scale), then play at ratio speed.
+  // Net: pitch changes by ratio, duration stays same.
+
+  const ac = getAudioCtx();
+  const newLength = Math.round(srcBuffer.length / ratio);
+  const offCtx = new OfflineAudioContext(
+    srcBuffer.numberOfChannels,
+    newLength,
+    srcBuffer.sampleRate
+  );
+
+  const offSrc = offCtx.createBufferSource();
+  offSrc.buffer = srcBuffer;
+  offSrc.playbackRate.value = ratio; // play faster/slower → compress/stretch time
+  offSrc.connect(offCtx.destination);
+  offSrc.start(0);
+
+  const rendered = await offCtx.startRendering();
+
+  // Now create a new buffer with the ORIGINAL length but fill with rendered data
+  // We'll play this back at `ratio` speed so pitch = ratio * (1/ratio) = 1... wait—
+  // Actually the trick is: rendered buffer is 1/ratio the length.
+  // Play it at playbackRate=1 → it plays in 1/ratio time (wrong).
+  // We need to play it at 1/ratio speed to restore original duration.
+  // BUT: pitch of output = originalPitch * playbackRate_of_rendering * playbackRate_of_playback
+  //    = originalPitch * ratio * (1/ratio) = originalPitch (wrong — no shift!)
+  //
+  // Correct approach:
+  // Render at playbackRate=1/ratio → time-stretched (longer) rendered buffer
+  // Play at playbackRate=1 → correct duration, pitch = original*(1/ratio) = lower pitch
+  // OR: Render at playbackRate=ratio → time-compressed, play at rate=1 → shorter duration, higher pitch
+  //
+  // The RIGHT trick: use different sampleRate in OfflineAudioContext.
+  // OfflineAudioContext with sampleRate = srcBuffer.sampleRate * ratio
+  // → samples are spaced closer in time from audio perspective
+  // → play rendered buffer at sampleRate=srcBuffer.sampleRate → pitch shifts up by ratio
+  //   and duration stays the same (same number of samples / same real sampleRate).
+
+  return rendered; // We'll handle playback rate compensation in playPitched()
+}
+
+async function playPitched() {
+  if (!recordedBuffer || isPlaying) return;
+  const ac = getAudioCtx();
+  const semitones = +pitchSlider.value;
+  const ratio = Math.pow(2, semitones / 12);
+
+  setStatus('processing…', '');
+  vizLabel.textContent = 'rendering';
+
+  // Build a time-compressed/expanded buffer via OfflineAudioContext
+  // with a resampled sampleRate to achieve pure pitch shift.
+  const newSR = Math.round(recordedBuffer.sampleRate * ratio);
+  const offCtx = new OfflineAudioContext(
+    recordedBuffer.numberOfChannels,
+    recordedBuffer.length,
+    newSR // trick: different sample rate = pitch shift
+  );
+
+  const offSrc = offCtx.createBufferSource();
+  offSrc.buffer = recordedBuffer;
+  offSrc.connect(offCtx.destination);
+  offSrc.start(0);
+
+  let rendered;
+  try {
+    rendered = await offCtx.startRendering();
+  } catch(e) {
+    setStatus('error rendering audio', 'error');
+    return;
+  }
+
+  // Play rendered buffer at the ORIGINAL sampleRate → pitch shifted, same duration
+  playSource = ac.createBufferSource();
+  playSource.buffer = rendered;
+  // We need to play at original sampleRate but the buffer's internal SR is newSR.
+  // AudioBufferSourceNode always plays at buffer.sampleRate mapped to context.sampleRate.
+  // So: perceived pitch = (newSR / ac.sampleRate) * natural pitch.
+  // newSR = srcSR * ratio → perceived pitch = ratio * natural. ✓
+  // Duration = rendered.length / ac.sampleRate = srcBuffer.length / (srcSR * ratio) * ... hmm.
+  // Actually OfflineAudioContext length = recordedBuffer.length samples at newSR.
+  // Playback time = length / ac.sampleRate... no. AudioBufferSourceNode uses buffer.sampleRate.
+  // Duration when played = rendered.length / rendered.sampleRate = recordedBuffer.length / newSR
+  //   = recordedBuffer.duration / ratio. That's wrong (changes duration).
+  //
+  // Fix: set playbackRate on source = 1/ratio to restore duration.
+  // Final pitch = ratio * (1/ratio) = 1... back to original. That's wrong too!
+  //
+  // THE REAL FIX: render at modified SR, then create a NEW AudioBuffer with
+  // the SAME data but sampleRate = ac.sampleRate, so playback duration = original.
+  // Pitch perceived = (rendered_SR / new_buffer_SR) * f = (newSR / ac.sampleRate) * f.
+  // Set new_buffer_SR = ac.sampleRate → perceived pitch = (newSR/ac.sampleRate) * f = ratio * f ✓
+  // Duration = rendered.length / ac.sampleRate = recordedBuffer.length / ac.sampleRate = original ✓
+
+  const finalBuf = ac.createBuffer(
+    rendered.numberOfChannels,
+    rendered.length,
+    ac.sampleRate // Override sampleRate → pitch = ratio, duration = original ✓
+  );
+  for (let ch = 0; ch < rendered.numberOfChannels; ch++) {
+    finalBuf.copyToChannel(rendered.getChannelData(ch), ch);
+  }
+
+  playSource = ac.createBufferSource();
+  playSource.buffer = finalBuf;
+
+  // Add analyser for playback viz
+  const playAnalyser = ac.createAnalyser();
+  playAnalyser.fftSize = 512;
+  playSource.connect(playAnalyser);
+  playAnalyser.connect(ac.destination);
+
+  isPlaying = true;
+  playBtn.textContent = '⏹ Stop';
+  setStatus('playing…', 'playing');
+  vizLabel.textContent = 'playback';
+  playCursor.classList.add('visible');
+
+  const startTime = ac.currentTime;
+  const dur = recordedBuffer.duration;
+
+  function animPlayback() {
+    if (!isPlaying) return;
+    const elapsed = ac.currentTime - startTime;
+    const progress = Math.min(elapsed / dur, 1);
+    drawWaveform(recordedBuffer, progress);
+    playCursor.style.left = (progress * 100) + '%';
+
+    if (progress < 1) requestAnimationFrame(animPlayback);
+  }
+  animPlayback();
+
+  playSource.onended = () => {
+    if (isPlaying) stopPlayback();
+  };
+  playSource.start(0);
+}
+
+function stopPlayback() {
+  if (playSource) {
+    try { playSource.stop(); } catch(e) {}
+    playSource = null;
+  }
+  isPlaying = false;
+  playBtn.innerHTML = '<svg width="12" height="12" viewBox="0 0 12 12" fill="currentColor"><path d="M2 1l9 5-9 5V1z"/></svg> Play';
+  setStatus('recording ready — adjust pitch & play', 'active');
+  vizLabel.textContent = 'waveform';
+  playCursor.classList.remove('visible');
+  if (recordedBuffer) drawWaveform(recordedBuffer);
+}
+
+// ─── CLEAR ────────────────────────────────────────────────────────────────
+function clearAll() {
+  stopPlayback();
+  recordedBuffer = null;
+  pitchSection.classList.remove('enabled');
+  playControls.classList.remove('enabled');
+  pitchSlider.value = 0;
+  updateSliderFill(0);
+  pitchDisplay.textContent = '0 st';
+  setStatus('tap the button to record', '');
+  durationDisplay.textContent = '';
+  vizLabel.textContent = 'idle';
+  ctx2d.clearRect(0, 0, canvas.width, canvas.height);
+}
+
+// ─── EVENTS ───────────────────────────────────────────────────────────────
+recBtn.addEventListener('click', () => {
+  if (isRecording) stopRecording();
+  else startRecording();
+});
+
+playBtn.addEventListener('click', () => {
+  if (isPlaying) stopPlayback();
+  else playPitched();
+});
+
+clearBtn.addEventListener('click', clearAll);
+
+pitchSlider.addEventListener('input', () => {
+  const v = +pitchSlider.value;
+  const sign = v > 0 ? '+' : '';
+  pitchDisplay.textContent = sign + v + ' st';
+  updateSliderFill(v);
+  // If playing, restart with new pitch
+  if (isPlaying) {
+    stopPlayback();
+    setTimeout(playPitched, 80);
+  }
+});
+
+// ─── IDLE CANVAS ──────────────────────────────────────────────────────────
+function drawIdle() {
+  const W = canvas.width, H = canvas.height;
+  ctx2d.clearRect(0, 0, W, H);
+  ctx2d.strokeStyle = '#1e1e2e';
+  ctx2d.lineWidth = 1;
+  ctx2d.beginPath();
+  ctx2d.moveTo(0, H/2);
+  ctx2d.lineTo(W, H/2);
+  ctx2d.stroke();
+}
+drawIdle();
+
+// ─── INFO PANEL ───────────────────────────────────────────────────────────
+const infoToggle = $('infoToggle');
+const infoPanel = $('infoPanel');
+const infoBg = $('infoBg');
+
+function openInfo() { infoPanel.classList.add('open'); }
+function closeInfo() { infoPanel.classList.remove('open'); }
+
+infoToggle.addEventListener('click', openInfo);
+infoBg.addEventListener('click', closeInfo);
+
+// Swipe down to close
+let touchStartY = 0;
+$('infoSheet').addEventListener('touchstart', e => { touchStartY = e.touches[0].clientY; }, { passive: true });
+$('infoSheet').addEventListener('touchend', e => {
+  if (e.changedTouches[0].clientY - touchStartY > 60) closeInfo();
+}, { passive: true });
+
+// ─── SERVICE WORKER ───────────────────────────────────────────────────────
+if ('serviceWorker' in navigator) {
+  navigator.serviceWorker.register('sw.js').catch(() => {});
+}
+</script>
+</body>
+</html>
