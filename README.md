@@ -1,4 +1,4 @@
-# Pitch Shifter
+# ElderSound - the Pitch Shifter
 
 A lightweight **Progressive Web App** that records your voice and lets you shift its pitch up or down — without changing the speed of playback.
 
@@ -18,7 +18,7 @@ Designed to help communicate with elderly people who may have difficulty hearing
 
 ##  Live App
 
- **[Open Pitch Shifter](https://daniele.proverbio.github.io/pitch-shifter/)**
+ **[Open ElderSound](https://daniele.proverbio.github.io/eldersound/)**
 
 
 ---
